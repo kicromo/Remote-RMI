@@ -2,6 +2,10 @@
 
 Este repositorio contiene la implementación de tres sistemas distribuidos utilizando Java RMI (Remote Method Invocation). Cada uno de los ejercicios propone un reto relacionado con la creación de servicios distribuidos, en los que varios clientes interactúan con un servidor central para compartir recursos o realizar operaciones concurrentes. A continuación, se ofrece una descripción general de cada uno de los ejercicios implementados:
 
+//---------------------------------------------------------------------------------------------------------------------------//
+
+
+
 1. Chat Distribuido usando RMI
 
 Este ejercicio consiste en la implementación de un chat simple distribuido que permite a múltiples usuarios enviar y recibir mensajes en tiempo real. Las principales características incluyen:
