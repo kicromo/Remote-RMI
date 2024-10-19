@@ -1,5 +1,4 @@
 package TextoCompartidoDistribuido;
-
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
@@ -106,6 +105,10 @@ public class TextCompartidoServidor extends UnicastRemoteObject implements TextE
             colaClientes.add(cliente);  // Añadimos al cliente a la cola si no está.
         }
         
+        if (colaClientes.peek().contains(cliente)) {
+        	semaforo.release();		// el primer cliente quiere seguir editando
+        }
+        
         // Esperamos hasta que sea el turno del cliente.
         while (!colaClientes.peek().equals(cliente)) {
             try {
@@ -137,3 +140,5 @@ public class TextCompartidoServidor extends UnicastRemoteObject implements TextE
         }
     }
 }
+
+
