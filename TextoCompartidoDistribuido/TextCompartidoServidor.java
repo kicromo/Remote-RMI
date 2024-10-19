@@ -4,43 +4,46 @@ import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
+import java.util.LinkedList;
+import java.util.Queue;
 import java.util.concurrent.Semaphore;
 
 public class TextCompartidoServidor extends UnicastRemoteObject implements TextEditorService {
     private StringBuilder registroMensajes;
-    private StringBuilder copiaTemporal; // Copia temporal del documento.
-    private final Semaphore semaforo;    // Semáforo para gestionar la edición.
-    private boolean isEditing = false;   // Indica si el documento está siendo editado.
+    private StringBuilder copiaTemporal;
+    private final Semaphore semaforo;
+    private boolean isEditing;
+    private Queue<String> colaClientes;  // Cola para manejar los turnos de los clientes.
 
     protected TextCompartidoServidor() throws RemoteException {
         registroMensajes = new StringBuilder();
         semaforo = new Semaphore(1, true); // Semáforo binario para controlar la edición.
+        isEditing = false;
+        colaClientes = new LinkedList<>();  // Inicializamos la cola.
     }
 
     @Override
     public synchronized String getDocument() throws RemoteException {
-        // Si el documento está siendo editado, informar del estado.
-        if (isEditing) {
-            return "El documento está siendo editado por otro cliente.";
-        }
-        return registroMensajes.toString(); // Si no está editado, devolver el contenido original.
+        return registroMensajes.toString();
     }
 
     @Override
     public void insertText(int position, String text) throws RemoteException {
         try {
-            semaforo.acquire(); // Intentar adquirir el semáforo para la edición.
+            // El cliente tiene que esperar su turno en la cola para modificar.
+            String clienteActual = Thread.currentThread().getName();
+            esperarTurno(clienteActual);
+
+            semaforo.acquire(); // El cliente actual adquiere el semáforo.
             
-            // Si no se está editando, empezar la edición con una copia temporal.
             if (!isEditing) {
-                isEditing = true; // Marcar que el documento está en modo edición.
-                copiaTemporal = new StringBuilder(registroMensajes); // Crear una copia temporal del documento.
+                isEditing = true;
+                copiaTemporal = new StringBuilder(registroMensajes);
             }
-            
-            // Inserción en la copia temporal.
+
             if (position >= 0 && position <= copiaTemporal.length()) {
                 copiaTemporal.insert(position, text);
-                System.out.println("Texto insertado temporalmente en la posición " + position);
+                System.out.println(clienteActual + " ha insertado texto en la posición " + position);
             } else {
                 System.out.println("Posición fuera de los límites.");
             }
@@ -48,26 +51,26 @@ public class TextCompartidoServidor extends UnicastRemoteObject implements TextE
         } catch (InterruptedException e) {
             e.printStackTrace();
         } finally {
-            // No se libera el semáforo aquí, se mantiene hasta que se guarde el documento.
-            // Esto garantiza que solo el mismo cliente siga editando hasta que llame a saveDocument.
+            // No liberamos el semáforo aquí, el cliente seguirá modificando hasta que llame a saveDocument.
         }
     }
 
     @Override
     public void deleteText(int position, int length) throws RemoteException {
         try {
-            semaforo.acquire(); // Intentar adquirir el semáforo para la edición.
+            String clienteActual = Thread.currentThread().getName();
+            esperarTurno(clienteActual);
 
-            // Si es la primera vez que se está editando, crear la copia temporal.
+            semaforo.acquire(); // El cliente actual adquiere el semáforo.
+
             if (!isEditing) {
                 isEditing = true;
-                copiaTemporal = new StringBuilder(registroMensajes); // Crear la copia temporal.
+                copiaTemporal = new StringBuilder(registroMensajes);
             }
 
-            // Eliminación en la copia temporal.
             if (position >= 0 && position + length <= copiaTemporal.length()) {
                 copiaTemporal.delete(position, position + length);
-                System.out.println("Texto eliminado temporalmente.");
+                System.out.println(clienteActual + " ha eliminado texto.");
             } else {
                 System.out.println("Posición fuera de los límites.");
             }
@@ -75,24 +78,51 @@ public class TextCompartidoServidor extends UnicastRemoteObject implements TextE
         } catch (InterruptedException e) {
             e.printStackTrace();
         } finally {
-            // Igual que en `insertText`, no se libera el semáforo hasta que se haga un save.
+            // No liberamos el semáforo aquí.
         }
     }
 
     @Override
-    public void saveDocument(String content) throws RemoteException {
+    public synchronized void saveDocument(String content) throws RemoteException {
         try {
-            
             if (isEditing) {
                 registroMensajes = new StringBuilder(copiaTemporal);
-                isEditing = false; 
+                isEditing = false;
                 System.out.println("Documento guardado y actualizado.");
             } else {
                 System.out.println("No se ha hecho ninguna modificación para guardar.");
             }
         } finally {
-            semaforo.release(); 
+            semaforo.release(); // Liberamos el semáforo cuando se guarda el documento.
+            liberarTurno();     // Liberamos el turno para el siguiente cliente.
         }
+    }
+
+    /**
+     * Este método encola al cliente y lo mantiene esperando hasta que sea su turno.
+     */
+    private synchronized void esperarTurno(String cliente) {
+        if (!colaClientes.contains(cliente)) {
+            colaClientes.add(cliente);  // Añadimos al cliente a la cola si no está.
+        }
+        
+        // Esperamos hasta que sea el turno del cliente.
+        while (!colaClientes.peek().equals(cliente)) {
+            try {
+                System.out.println(cliente + " está esperando su turno...");
+                wait();  // Esperar hasta que sea notificado.
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    /**
+     * Este método libera el turno del cliente actual y notifica al siguiente.
+     */
+    private synchronized void liberarTurno() {
+        colaClientes.poll(); // Eliminamos al cliente actual de la cola.
+        notifyAll(); // Notificamos a todos para que el siguiente cliente pueda tomar el turno.
     }
 
     public static void main(String[] args) {
@@ -107,5 +137,3 @@ public class TextCompartidoServidor extends UnicastRemoteObject implements TextE
         }
     }
 }
-
-
